@@ -5,9 +5,10 @@ import argparse
 import numpy as np
 import scipy.misc
 import sys
-sys.path.insert(1,'/home/semionn/Documents/Research_work/caffe')
-sys.path.insert(1,'/home/semionn/Documents/Research_work/deeppy')
-sys.path.insert(1,'/home/semionn/Documents/Research_work/cudarray')
+script_path = os.path.realpath(__file__)
+sys.path.insert(1, script_path + '/caffe')
+sys.path.insert(1, script_path + '/deeppy')
+sys.path.insert(1, script_path + '/cudarray')
 import deeppy as dp
 import caffe
 
