@@ -5,7 +5,7 @@ import argparse
 import numpy as np
 import scipy.misc
 import sys
-script_path = os.path.realpath(__file__)
+script_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(1, script_path + '/caffe')
 sys.path.insert(1, script_path + '/deeppy')
 sys.path.insert(1, script_path + '/cudarray')
@@ -110,6 +110,9 @@ def run():
     
 def main_run(args):
     
+    load_deeppy = False
+    load_dream = True    
+    
     if args is None:
         temp = {
                 "subject"          :  "images/margrethe2.jpg",
@@ -142,8 +145,10 @@ def main_run(args):
     #model.force_backward = True
     #open(prototxt, 'w').write(str(model))
     
-    net_caffe = caffe.Classifier(prototxt, params_file,
-                           mean = np.float32([104.0, 116.0, 122.0]), # ImageNet mean, training set dependent
+    pixel_mean = [ 123.68, 103.939, 116.779]    
+    if load_dream:
+        net_caffe = caffe.Classifier(prototxt, params_file,
+                           mean = np.float32(pixel_mean), # ImageNet mean, training set dependent
                            channel_swap = (2,1,0)) # the reference model has channels in BGR order instead of RGB
     #print [method for method in dir(net_caffe)] # if callable(getattr(net_caffe, method))
     #print net_caffe.layers
@@ -178,6 +183,8 @@ def main_run(args):
         objective(dst)  # specify the optimization objective
         net.backward(start=end)
         g = src.diff[0]
+        if np.abs(g).mean() == 0:
+            raise Exception("fail")
         # apply normalized ascent step to the input image
         src.data[:] += step_size/np.abs(g).mean() * g
     
@@ -191,8 +198,8 @@ def main_run(args):
                   end='conv3_3', clip=True, **step_params):
         # prepare base images for all octaves
         octaves = [preprocess(net, base_img)]
-        for i in xrange(octave_n-1):
-            octaves.append(nd.zoom(octaves[-1], (1, 1.0/octave_scale,1.0/octave_scale), order=1))
+        #for i in xrange(octave_n-1):
+        #    octaves.append(nd.zoom(octaves[-1], (1, 1.0/octave_scale,1.0/octave_scale), order=1))
         
         src = net.blobs['data']
         detail = np.zeros_like(octaves[-1]) # allocate image for network-produced details
@@ -226,14 +233,32 @@ def main_run(args):
     #                       to_bc01(style_img), subject_weights, style_weights,
     #                       args.smoothness)
     
-    img = np.float32(PIL.Image.open('images/margrethe.jpg'))
+    img = np.float32(PIL.Image.open('images/margrethe2.jpg'))
     #showarray(img)
     
     img_style = np.float32(PIL.Image.open(args.style))
     
-    layers, img_mean = vgg19_net(args.vgg19, pool_method=args.pool_method)
-
-    _=deepdream(net_caffe, img)
+    #layers, img_mean = vgg19_net(args.vgg19, pool_method=args.pool_method)
+    
+    # Inputs
+    if load_deeppy:
+        style_img = imread(args.style) - pixel_mean
+        subject_img = imread(args.subject) - pixel_mean
+        if args.init is None:
+            init_img = subject_img
+        else:
+            init_img = imread(args.init) - pixel_mean
+        noise = np.random.normal(size=init_img.shape, scale=np.std(init_img)*1e-1)
+        init_img = init_img * (1 - args.init_noise) + noise * args.init_noise
+    
+        subject_weights = weight_array(args.subject_weights) * args.subject_ratio
+        style_weights = weight_array(args.style_weights)
+        layers, img_mean = vgg19_net(args.vgg19, pool_method=args.pool_method)
+        net = StyleNetwork(layers, to_bc01(init_img), to_bc01(subject_img),
+                           to_bc01(style_img), subject_weights, style_weights,
+                           args.smoothness)
+    if load_dream:
+        _=deepdream(net_caffe, img)
     #learn_net_style(net_caffe, img, img_style)
     #net_caffe.crop_dims
     
