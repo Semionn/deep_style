@@ -72,24 +72,49 @@ class StyleNet(caffe.Net):
         noise = np.random.normal(size=init_img.shape, scale=np.std(init_img)*1e-1)
         init_img = init_img * (1 - init_noise) + noise * init_noise
 
-        """def output_shape(blob, x_shape):
+        def output_shape(blob, x_shape, channels_n):
             b, _, img_h, img_w = x_shape
-            filter_shape = blob.shape[2:]
-            out_shape = ((img_h + 2*padding[0] - filter_shape[0]) //
-                         strides[0] + 1,
-                         (img_w + 2*padding[1] - filter_shape[1]) //
-                         strides[1] + 1)
-            return (b, n_filters) + out_shape"""
+            filter_shape = (3,3)
+            padding_w = 1
+            padding_h = 1
+
+            strides_w = 1
+            strides_h = 1
+
+            out_shape = ((img_h + 2*padding_h - filter_shape[0]) //
+                         strides_h + 1,
+                         (img_w + 2*padding_w - filter_shape[1]) //
+                         strides_w + 1)
+            return (b, channels_n) + out_shape
 
         # Setup network
         x_shape = init_img.shape
         self.x = Parameter(init_img)
         self.x._setup(x_shape)
-        for blob in self.blobs.values():
-            shape = blob.shape
-            blob.reshape(shape[0], shape[1], x_shape[0], x_shape[1])
-            #x_shape = output_shape(blob, x_shape)
-            #x_shape = (blob.shape
+        for i, blob in enumerate(self.blobs.values()):
+            blob_name = self._blob_names[i]
+            if "_1" in blob_name:
+                shape = blob.shape
+                blob.reshape(shape[0], shape[1], x_shape[2], x_shape[3])
+                x_shape = output_shape(blob, x_shape, blob.channels)
+            elif "_2" in blob_name:
+                shape = blob.shape
+                blob.reshape(shape[0], shape[1], x_shape[2], x_shape[3])
+                x_shape = (shape[0], shape[1]) + x_shape[2:]
+            elif "pool" in blob_name:
+                shape = blob.shape
+                blob.reshape(shape[0], shape[1], x_shape[0], x_shape[1])
+                x_shape = (shape[0], shape[1]) + x_shape[2:]
+                x_shape = (shape[0], shape[1]) + (x_shape[2] / 2, x_shape[3] / 2)
+            elif "data" in blob_name:
+                shape = blob.shape
+                blob.reshape(shape[0], shape[1], x_shape[2], x_shape[3])
+                x_shape = output_shape(blob, x_shape, self.blobs.values()[1].channels)
+
+
+
+
+
 
         # Precompute subject features and style Gram matrices
         self.subject_feats = [None]*len(self.layers)
@@ -98,19 +123,19 @@ class StyleNet(caffe.Net):
         def preprocess(img):
             return np.float32(np.rollaxis(img, 2)[::-1]) - self.transformer.mean['data']
 
-        def set_input(blob, octave, addNoise=False):
-            detail = np.zeros_like(octave[-1]) # allocate image for network-produced details
+        def set_input(blob, octave):
+            if len(octave[0].shape[-2:]) < 2:
+                raise Exception()
             h, w = octave[0].shape[-2:]
-            old_shape = blob.shape
+            #old_shape = blob.shape
             blob.reshape(1,blob.channels,h,w)
-            if addNoise:
-                blob.data[0] = octave[0]+detail
-            else:
-                blob.data[0] = octave[0]
+            blob.data[0] = octave[0]
 
 
-        octaves_subj = [preprocess(subject_img)]
-        octaves_style = [preprocess(style_img)]
+        #octaves_subj = [preprocess(subject_img)]
+        #octaves_style = [preprocess(style_img)]
+        octaves_subj = subject_img
+        octaves_style = style_img
 
         #next_subject = ca.array(subject_img)
         #next_style = ca.array(style_img)
@@ -122,16 +147,22 @@ class StyleNet(caffe.Net):
         curr_blob = self.blobs[curr_blob_name]
         next_blob_name = layers_name_list[layer_idx + 1]
         next_blob = self.blobs[next_blob_name]
-
-        set_input(curr_blob, octaves_subj, True)
+        next_subject = octaves_subj
+        next_style = octaves_style
+        set_input(curr_blob, octaves_subj)
         next_subject = self.forward(end=next_blob_name)[next_blob_name]
-        set_input(curr_blob, octaves_style, True)
-        next_style = self.forward(end=next_blob_name)[next_blob_name]
-        layer_idx += 2
 
-        for l, layer in enumerate(self.layers):
-            if layer_idx + 1 == len(layers_name_list):
+        set_input(curr_blob, octaves_style)
+        next_style = self.forward(end=next_blob_name)[next_blob_name]
+        layer_idx += 1
+
+        for l, (blob_name, blob) in enumerate(self.blobs.iteritems()):
+            if "fc" in blob_name:
                 break
+            if l == 0:
+                continue
+
+            print list(self.blobs.values()[layer_idx].shape), self._blob_names[layer_idx], blob_name
             curr_blob_name = layers_name_list[layer_idx]
             curr_blob = self.blobs[curr_blob_name]
             next_blob_name = layers_name_list[layer_idx + 1]

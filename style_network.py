@@ -91,6 +91,9 @@ class StyleNetwork(Model):
         for layer in self.layers:
             layer._setup(x_shape)
             x_shape = layer.y_shape(x_shape)
+            #if "conv" in layer.name:
+            #    print "filter_shape = %s " % layer.filter_shape
+            print "%s : %s" % (layer.name, x_shape)
 
         # Precompute subject features and style Gram matrices
         self.subject_feats = [None]*len(self.layers)
@@ -98,6 +101,7 @@ class StyleNetwork(Model):
         next_subject = ca.array(subject_img)
         next_style = ca.array(style_img)
         for l, layer in enumerate(self.layers):
+            print layer.name
             next_subject = layer.fprop(next_subject)
             next_style = layer.fprop(next_style)
             if self.subject_weights[l] > 0:

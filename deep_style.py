@@ -16,6 +16,10 @@ import deeppy as dp
 import caffe
 import caffe_style.style_net as style_net
 
+import caffe.draw
+from google.protobuf import text_format
+from caffe.proto import caffe_pb2
+
 
 import numpy as np
 import scipy.ndimage as nd
@@ -146,9 +150,9 @@ def run():
                     'the subject from one image and the style from another.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('--subject', type=str, default="images/margrethe2.jpg",
+    parser.add_argument('--subject', type=str, default="images/tuebingen3.jpg",
                         help='Subject image.')
-    parser.add_argument('--style', type=str, default="images/groening2.jpg",
+    parser.add_argument('--style', type=str, default="images/starry_night3.jpg",
                         help='Style image.')
     parser.add_argument('--output', default='out.png', type=str,
                         help='Output image.')
@@ -191,8 +195,8 @@ def run():
     
 def main_run(args):
     
-    load_deeppy = True
-    load_dream = False
+    load_deeppy = False
+    load_dream = True
 
     if args.random_seed is not None:
         np.random.seed(args.random_seed)
@@ -203,12 +207,14 @@ def main_run(args):
     img_subj = np.float32(PIL.Image.open(args.subject))
     img_style = np.float32(PIL.Image.open(args.style))
     
-    pixel_mean = [ 123.68, 103.939, 116.779]    
+    pixel_mean = [123.68, 103.939, 116.779]
     if load_dream:
         if args.gpu == "on":
             caffe.set_mode_gpu()
             caffe.set_device(0);
-        net_caffe = style_net.StyleNet(prototxt, params_file, img_subj, img_style,
+        style_img = to_bc01(imread(args.style) - pixel_mean)
+        subject_img = to_bc01(imread(args.subject) - pixel_mean)
+        net_caffe = style_net.StyleNet(prototxt, params_file, subject_img, style_img,
                                        args.subject_weights, args.style_weights, args.subject_ratio,
                                        mean = np.float32(pixel_mean), channel_swap = (2,1,0));
 
