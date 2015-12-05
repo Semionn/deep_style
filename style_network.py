@@ -3,7 +3,7 @@ import cudarray as ca
 import deeppy as dp
 from deeppy.base import Model
 from deeppy.parameter import Parameter
-import caffe
+from caffe_style.debug_logger import Logger
 
 
 class Convolution(dp.Convolution):
@@ -12,6 +12,7 @@ class Convolution(dp.Convolution):
     This layer does not propagate gradients to filters. Also, it reduces
     memory consumption as it does not store fprop() input for bprop().
     """
+
     def __init__(self, layer):
         self.layer = layer
 
@@ -33,6 +34,12 @@ class Convolution(dp.Convolution):
         if attr in self.__dict__:
             return getattr(self, attr)
         return getattr(self.layer, attr)
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return self.name
 
 
 def gram_matrix(img_bc01):
@@ -62,7 +69,8 @@ class StyleNetwork(Model):
     def __init__(self, layers, init_img, subject_img, style_img,
                  subject_weights, style_weights, smoothness=0.0):
 
-        
+        self.logger = Logger("deeppy_style", True)
+
         # Map weights (in convolution indices) to layer indices
         self.subject_weights = np.zeros(len(layers))
         self.style_weights = np.zeros(len(layers))
@@ -70,11 +78,12 @@ class StyleNetwork(Model):
         conv_idx = 0
         for l, layer in enumerate(layers):
             if isinstance(layer, dp.Activation):
+                print l, layer.name
                 self.subject_weights[l] = subject_weights[conv_idx]
                 self.style_weights[l] = style_weights[conv_idx]
                 if subject_weights[conv_idx] > 0 or \
-                   style_weights[conv_idx] > 0:
-                    layers_len = l+1
+                                style_weights[conv_idx] > 0:
+                    layers_len = l + 1
                 conv_idx += 1
 
         # Discard unused layers
@@ -84,6 +93,13 @@ class StyleNetwork(Model):
         self.layers = [Convolution(l) if isinstance(l, dp.Convolution) else l
                        for l in layers]
 
+        layers_names = ['conv1_1', 'relu1_1', 'conv1_2', 'relu1_2', 'pool1', 'conv2_1', 'relu2_1', 'conv2_2', 'relu2_2',
+                        'pool2', 'conv3_1', 'relu3_1', 'conv3_2', 'relu3_2', 'conv3_3', 'relu3_3', 'conv3_4', 'relu3_4',
+                        'pool3', 'conv4_1', 'relu4_1', 'conv4_2', 'relu4_2', 'conv4_3', 'relu4_3', 'conv4_4', 'relu4_4',
+                        'pool4', 'conv5_1', 'relu5_1']
+
+        self.layers_names_map = dict(map(lambda (i, l): (l, layers_names[i]), enumerate(self.layers)))
+
         # Setup network
         x_shape = init_img.shape
         self.x = Parameter(init_img)
@@ -91,22 +107,22 @@ class StyleNetwork(Model):
         for layer in self.layers:
             layer._setup(x_shape)
             x_shape = layer.y_shape(x_shape)
-            #if "conv" in layer.name:
-            #    print "filter_shape = %s " % layer.filter_shape
             print "%s : %s" % (layer.name, x_shape)
 
         # Precompute subject features and style Gram matrices
-        self.subject_feats = [None]*len(self.layers)
-        self.style_grams = [None]*len(self.layers)
+        self.subject_feats = [None] * len(self.layers)
+        self.style_grams = [None] * len(self.layers)
         next_subject = ca.array(subject_img)
+        # print "next_subject = %s" % next_subject[0][0][0][0]
         next_style = ca.array(style_img)
         for l, layer in enumerate(self.layers):
-            print layer.name
             next_subject = layer.fprop(next_subject)
+            # print "next_subject = %s" % next_subject[0][0][0][0]
             next_style = layer.fprop(next_style)
             if self.subject_weights[l] > 0:
                 self.subject_feats[l] = next_subject
             if self.style_weights[l] > 0:
+                print l, layer.name, next_subject.shape
                 gram = gram_matrix(next_style)
                 # Scale gram matrix to compensate for different image sizes
                 n_pixels_subject = np.prod(next_subject.shape[2:])
@@ -120,6 +136,9 @@ class StyleNetwork(Model):
         self.tv_kernel = ca.array(kernel[np.newaxis, np.newaxis, ...])
         self.tv_conv = ca.nnet.ConvBC01((1, 1), (1, 1))
 
+    def get_layer_name(self, layer):
+        return self.layers_names_map[layer]
+
     @property
     def image(self):
         return np.array(self.x.array)
@@ -131,33 +150,41 @@ class StyleNetwork(Model):
     def _update(self):
         # Forward propagation
         next_x = self.x.array
-        x_feats = [None]*len(self.layers)
+        # print "next_x = %s" % next_x[0][0][0][0]
+        x_feats = [None] * len(self.layers)
         for l, layer in enumerate(self.layers):
             next_x = layer.fprop(next_x)
+            # print "l = %s, next_x = %s" % (l, next_x[0][0][0][0])
+            print "next_x = %s" % list(next_x.shape)
             if self.subject_weights[l] > 0 or self.style_weights[l] > 0:
                 x_feats[l] = next_x
 
         # Backward propagation
         grad = ca.zeros_like(next_x)
         loss = ca.zeros(1)
+        # print "x_feats = %s" % list(map(lambda x: None if x is None else x.shape, x_feats))
+        # print " ".join(map(lambda layer: layer.name, self.layers))
         for l, layer in reversed(list(enumerate(self.layers))):
             if self.subject_weights[l] > 0:
                 diff = x_feats[l] - self.subject_feats[l]
                 norm = ca.sum(ca.fabs(diff)) + 1e-8
                 weight = float(self.subject_weights[l]) / norm
                 grad += diff * weight
-                loss += 0.5*weight*ca.sum(diff**2)
+                loss += 0.5 * weight * ca.sum(diff ** 2)
             if self.style_weights[l] > 0:
                 diff = gram_matrix(x_feats[l]) - self.style_grams[l]
+                # print "l = %s, style_grams = %s" % (l, self.style_grams[l].shape)
                 n_channels = diff.shape[0]
                 x_feat = ca.reshape(x_feats[l], (n_channels, -1))
                 style_grad = ca.reshape(ca.dot(diff, x_feat), x_feats[l].shape)
                 norm = ca.sum(ca.fabs(style_grad))
                 weight = float(self.style_weights[l]) / norm
                 style_grad *= weight
+                print "style_grad = %s" % list(style_grad.shape)
                 grad += style_grad
-                loss += 0.25*weight*ca.sum(diff**2)
+                loss += 0.25 * weight * ca.sum(diff ** 2)
             grad = layer.bprop(grad)
+            print "blob = %s, grad = %s" % (self.get_layer_name(layer), list(grad.shape))
 
         if self.tv_weight > 0:
             x = ca.reshape(self.x.array, (3, 1) + grad.shape[2:])

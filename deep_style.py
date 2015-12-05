@@ -1,34 +1,25 @@
 #!/usr/bin/env python
 
-import os
-import argparse
+# todo: replace /caffe to /distibute
+# todo: script to make distibute
 import numpy as np
-import scipy.misc
+import os
 import sys
-
-#todo: replace /caffe to /distibute
-#todo: script to make distibute
 script_path = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(1, os.path.join(script_path,'caffe'))
-sys.path.insert(1, os.path.join(script_path,'deeppy'))
-sys.path.insert(1, os.path.join(script_path,'cudarray'))
+sys.path.insert(1, os.path.join(script_path, 'caffe'))
+sys.path.insert(1, os.path.join(script_path, 'deeppy'))
+sys.path.insert(1, os.path.join(script_path, 'cudarray'))
+
+import argparse
+import scipy.misc
 import deeppy as dp
 import caffe
-import caffe_style.style_net as style_net
-
 import caffe.draw
-from google.protobuf import text_format
-from caffe.proto import caffe_pb2
-
-
-import numpy as np
-import scipy.ndimage as nd
 import PIL.Image
-from IPython.display import clear_output
-
 from matconvnet import vgg19_net
+import caffe_style.style_net as style_net
 from style_network import StyleNetwork
-
+from caffe_style.style_adam_solver import StyleAdamSolver
 
 def weight_tuple(s):
     try:
@@ -71,78 +62,19 @@ def to_bc01(img):
 def to_rgb(img):
     return np.transpose(img[0], (1, 2, 0))
 
+
 def save_img(a, file_name='out.jpeg'):
     a = np.uint8(np.clip(a, 0, 255))
     PIL.Image.fromarray(a).save(file_name)
 
+
 def preprocess(net, img):
     return np.float32(np.rollaxis(img, 2)[::-1]) - net.transformer.mean['data']
+
+
 def deprocess(net, img):
-    return np.dstack((img + net.transformer.mean['data'])[::-1])
+    return np.dstack((img + net.transformer.mean['data']))
 
-def objective_L2(dst):
-    dst.diff[:] = dst.data
-
-def make_step(net, step_size=1.5, end='inception_4c/output',
-              jitter=32, clip=True, objective=objective_L2):
-    '''Basic gradient ascent step.'''
-
-    src = net.blobs['data'] # input image is stored in Net's 'data' blob
-    print("blobs: ", net.blobs)
-    dst = net.blobs[end]
-
-
-    ox, oy = np.random.randint(-jitter, jitter+1, 2)
-    src.data[0] = np.roll(np.roll(src.data[0], ox, -1), oy, -2) # apply jitter shift
-
-    net.forward(end=end)
-    objective(dst)  # specify the optimization objective
-    net.backward(start=end)
-    g = src.diff[0]
-    if np.abs(g).mean() == 0:
-        raise Exception("fail")
-    # apply normalized ascent step to the input image
-    src.data[:] += step_size/np.abs(g).mean() * g
-
-    src.data[0] = np.roll(np.roll(src.data[0], -ox, -1), -oy, -2) # unshift image
-
-    if clip:
-        bias = net.transformer.mean['data']
-        src.data[:] = np.clip(src.data, -bias, 255-bias)
-
-def deepdream(net, base_img, iter_n=40, octave_n=4, octave_scale=1.4,
-              end='conv2_1', clip=True, **step_params):
-    # prepare base images for all octaves
-    octaves = [preprocess(net, base_img)]
-    #for i in xrange(octave_n-1):
-    #    octaves.append(nd.zoom(octaves[-1], (1, 1.0/octave_scale,1.0/octave_scale), order=1))
-
-    src = net.blobs['data']
-    detail = np.zeros_like(octaves[-1]) # allocate image for network-produced details
-    for octave, octave_base in enumerate(octaves[::-1]):
-        h, w = octave_base.shape[-2:]
-        if octave > 0:
-            # upscale details from the previous octave
-            h1, w1 = detail.shape[-2:]
-            detail = nd.zoom(detail, (1, 1.0*h/h1,1.0*w/w1), order=1)
-
-        src.reshape(1,3,h,w) # resize the network's input image size
-        src.data[0] = octave_base+detail
-        for i in xrange(iter_n):
-            make_step(net, end=end, clip=clip, **step_params)
-
-            # visualization
-            vis = deprocess(net, src.data[0])
-            if not clip: # adjust image contrast if clipping is disabled
-                vis = vis*(255.0/np.percentile(vis, 99.98))
-            save_img(vis)
-            print octave, i, end, vis.shape
-            clear_output(wait=True)
-
-        # extract details produced on the current octave
-        detail = src.data[0]-octave_base
-    # returning the resulting image
-    return deprocess(net, src.data[0])
 
 def run():
     parser = argparse.ArgumentParser(
@@ -150,9 +82,9 @@ def run():
                     'the subject from one image and the style from another.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('--subject', type=str, default="images/tuebingen3.jpg",
+    parser.add_argument('--subject', type=str, default="images/tuebingen2.jpg",
                         help='Subject image.')
-    parser.add_argument('--style', type=str, default="images/starry_night3.jpg",
+    parser.add_argument('--style', type=str, default="images/groening2.jpg",
                         help='Style image.')
     parser.add_argument('--output', default='out.png', type=str,
                         help='Output image.')
@@ -165,7 +97,7 @@ def run():
                         help='Random state.')
     parser.add_argument('--animation', default='animation', type=str,
                         help='Output animation directory.')
-    parser.add_argument('--iterations', default=250, type=int,
+    parser.add_argument('--iterations', default=200, type=int,
                         help='Number of iterations to run.')
     parser.add_argument('--learn-rate', default=2.0, type=float,
                         help='Learning rate.')
@@ -189,34 +121,33 @@ def run():
                         type=str, help='VGG-19 .prototxt file.')
     parser.add_argument('--caffemodel', default='VGG_ILSVRC_19_layers.caffemodel',
                         type=str, help='VGG-19 .caffemodel file.')
+    parser.add_argument('--solver-params', default='solver_adam.prototxt',
+                        type=str, help='Adam solver .prototxt file.')
     args = parser.parse_args()
 
     main_run(args)
-    
+
+
 def main_run(args):
-    
     load_deeppy = False
     load_dream = True
 
     if args.random_seed is not None:
         np.random.seed(args.random_seed)
-    
+
     prototxt = args.prototxt
     params_file = args.caffemodel
 
-    img_subj = np.float32(PIL.Image.open(args.subject))
-    img_style = np.float32(PIL.Image.open(args.style))
-    
-    pixel_mean = [123.68, 103.939, 116.779]
+    pixel_mean = [103.939, 116.779, 123.68]
     if load_dream:
         if args.gpu == "on":
             caffe.set_mode_gpu()
-            caffe.set_device(0);
-        style_img = to_bc01(imread(args.style) - pixel_mean)
-        subject_img = to_bc01(imread(args.subject) - pixel_mean)
+            caffe.set_device(0)
+        style_img = caffe.io.load_image(args.style)
+        subject_img = caffe.io.load_image(args.subject)
         net_caffe = style_net.StyleNet(prototxt, params_file, subject_img, style_img,
                                        args.subject_weights, args.style_weights, args.subject_ratio,
-                                       mean = np.float32(pixel_mean), channel_swap = (2,1,0));
+                                       mean=np.float32(pixel_mean))
 
     if load_deeppy:
         style_img = imread(args.style) - pixel_mean
@@ -225,16 +156,24 @@ def main_run(args):
             init_img = subject_img
         else:
             init_img = imread(args.init) - pixel_mean
-        noise = np.random.normal(size=init_img.shape, scale=np.std(init_img)*1e-1)
+        noise = np.random.normal(
+            size=init_img.shape, scale=np.std(init_img) * 1e-1)
         init_img = init_img * (1 - args.init_noise) + noise * args.init_noise
-    
-        subject_weights = weight_array(args.subject_weights) * args.subject_ratio
+
+        subject_weights = weight_array(
+            args.subject_weights) * args.subject_ratio
         style_weights = weight_array(args.style_weights)
         layers, img_mean = vgg19_net(args.vgg19, pool_method=args.pool_method)
         net = StyleNetwork(layers, to_bc01(init_img), to_bc01(subject_img),
                            to_bc01(style_img), subject_weights, style_weights,
                            args.smoothness)
+
+        next_x = net.x.array
+        for i in range(0):
+            next_x = net.layers[i].fprop(next_x)
+
         # Repaint image
+
         def net_img():
             return to_rgb(net.image) + pixel_mean
 
@@ -253,8 +192,25 @@ def main_run(args):
         imsave(args.output, net_img())
 
     if load_dream:
-        _=deepdream(net_caffe, img_subj)
-        #_ = net_caffe._update();
+        net = net_caffe
+        src = net.blobs['data']
+        src.data[...] = net.transformer.preprocess('data', subject_img)
+
+        vis = deprocess(net, src.data[0])
+        save_img(vis)
+        params = net._params
+        style_adam = StyleAdamSolver(learn_rate=args.learn_rate)
+        optimization_states = [style_adam.init_state(p) for p in params]
+        for i in range(args.iterations):
+            cost = np.mean(net._update())
+            vis = deprocess(net, src.data[0])
+            save_img(vis)
+            for param, state in zip(params, optimization_states):
+                style_adam.step(param, state)
+            print('Iteration: %i, cost: %.4f' % (i, cost))
+            if cost < 10:
+                break
+
 
 if __name__ == "__main__":
     run()

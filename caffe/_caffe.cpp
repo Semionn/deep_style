@@ -16,6 +16,8 @@
 
 #include "caffe/caffe.hpp"
 #include "caffe/python_layer.hpp"
+#include "caffe/sgd_solvers.hpp"
+#include "caffe/syncedmem.hpp"
 
 // Temporary solution for numpy < 1.7 versions: old macro, no promises.
 // You're strongly advised to upgrade to >= 1.7.
@@ -133,8 +135,8 @@ void Net_SetInputArrays(Net<Dtype>* net, bp::object data_obj,
 
 Solver<Dtype>* GetSolverFromFile(const string& filename) {
   SolverParameter param;
-  ReadProtoFromTextFileOrDie(filename, &param);
-  return GetSolver<Dtype>(param);
+  ReadSolverParamsFromTextFileOrDie(filename, &param);
+  return SolverRegistry<Dtype>::CreateSolver(param);
 }
 
 struct NdarrayConverterGenerator {
@@ -217,6 +219,12 @@ BOOST_PYTHON_MODULE(_caffe) {
 
   bp::def("layer_type_list", &LayerRegistry<Dtype>::LayerTypeList);
 
+  bp::enum_<SyncedMemory::SyncedHead>("synced_head")
+      .value("UNINITIALIZED,", SyncedMemory::UNINITIALIZED)
+      .value("HEAD_AT_CPU", SyncedMemory::HEAD_AT_CPU)
+      .value("HEAD_AT_GPU,", SyncedMemory::HEAD_AT_GPU)
+      .value("SYNCED", SyncedMemory::SYNCED)
+      ;
   bp::class_<Net<Dtype>, shared_ptr<Net<Dtype> >, boost::noncopyable >("Net",
     bp::no_init)
     .def("__init__", bp::make_constructor(&Net_Init))
@@ -249,6 +257,10 @@ BOOST_PYTHON_MODULE(_caffe) {
 
   bp::class_<Blob<Dtype>, shared_ptr<Blob<Dtype> >, boost::noncopyable>(
     "Blob", bp::no_init)
+    .def("mutable_cpu_data", &Blob<Dtype>::mutable_cpu_data,
+        bp::return_value_policy<bp::return_opaque_pointer>() )
+    .def("mutable_gpu_data", &Blob<Dtype>::mutable_gpu_data,
+        bp::return_value_policy<bp::return_opaque_pointer>() )
     .add_property("shape",
         bp::make_function(
             static_cast<const vector<int>& (Blob<Dtype>::*)() const>(
@@ -286,7 +298,8 @@ BOOST_PYTHON_MODULE(_caffe) {
     .def("solve", static_cast<void (Solver<Dtype>::*)(const char*)>(
           &Solver<Dtype>::Solve), SolveOverloads())
     .def("step", &Solver<Dtype>::Step)
-    .def("restore", &Solver<Dtype>::Restore);
+    .def("restore", &Solver<Dtype>::Restore)
+    .def("snapshot", &Solver<Dtype>::Snapshot);
 
   bp::class_<SGDSolver<Dtype>, bp::bases<Solver<Dtype> >,
     shared_ptr<SGDSolver<Dtype> >, boost::noncopyable>(
