@@ -94,7 +94,7 @@ def run():
                         help='Weight of subject relative to style.')
     parser.add_argument('--pool-method', default='avg', type=str,
                         choices=['max', 'avg'], help='Subsampling scheme.')
-    parser.add_argument('--gpu', default='True', choices=['True', 'False'],
+    parser.add_argument('--gpu', default='True', choices=['true', 'false'],
                         type=str, help='turn on/off gpu mode.')
     parser.add_argument('--vgg19', default='imagenet-vgg-verydeep-19.mat',
                         type=str, help='VGG-19 .mat file.')
@@ -135,7 +135,7 @@ def main_run(args):
     resize_big_image(args.style)
 
     pixel_mean = [103.939, 116.779, 123.68]
-    if args.gpu == "True":
+    if args.gpu == "true":
         caffe.set_mode_gpu()
         caffe.set_device(0)
     style_img = caffe.io.load_image(args.style)
