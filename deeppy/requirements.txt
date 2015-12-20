@@ -1,3 +1,0 @@
-numpy>=1.8
-pillow>=2.8
-cudarray>=0.1.dev

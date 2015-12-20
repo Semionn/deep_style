@@ -8,18 +8,14 @@ import sys
 
 script_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(1, os.path.join(script_path, 'caffe'))
-sys.path.insert(1, os.path.join(script_path, 'deeppy'))
 sys.path.insert(1, os.path.join(script_path, 'cudarray'))
 
 import argparse
 import scipy.misc
-import deeppy as dp
 import caffe
 import caffe.draw
 import PIL.Image
-from matconvnet import vgg19_net
 import caffe_style.style_net as style_net
-from style_network import StyleNetwork
 from caffe_style.style_adam_solver import StyleAdamSolver
 
 
@@ -46,23 +42,6 @@ def weight_array(weights):
     if norm > 0:
         array /= norm
     return array
-
-
-def imread(path):
-    return scipy.misc.imread(path).astype(dp.float_)
-
-
-def imsave(path, img):
-    img = np.clip(img, 0, 255).astype(np.uint8)
-    scipy.misc.imsave(path, img)
-
-
-def to_bc01(img):
-    return np.transpose(img, (2, 0, 1))[np.newaxis, ...]
-
-
-def to_rgb(img):
-    return np.transpose(img[0], (1, 2, 0))
 
 
 def save_img(a, file_name):
@@ -115,7 +94,7 @@ def run():
                         help='Weight of subject relative to style.')
     parser.add_argument('--pool-method', default='avg', type=str,
                         choices=['max', 'avg'], help='Subsampling scheme.')
-    parser.add_argument('--gpu', default='on', choices=['on', 'off'],
+    parser.add_argument('--gpu', default='True', choices=['True', 'False'],
                         type=str, help='turn on/off gpu mode.')
     parser.add_argument('--vgg19', default='imagenet-vgg-verydeep-19.mat',
                         type=str, help='VGG-19 .mat file.')
@@ -156,7 +135,7 @@ def main_run(args):
     resize_big_image(args.style)
 
     pixel_mean = [103.939, 116.779, 123.68]
-    if args.gpu == "on":
+    if args.gpu == "True":
         caffe.set_mode_gpu()
         caffe.set_device(0)
     style_img = caffe.io.load_image(args.style)
