@@ -2,7 +2,7 @@ import numpy as np
 
 
 class StyleAdamSolver:
-    def __init__(self, learn_rate, beta1=0.9, beta2=0.999, lambd=1 - 1e-8,
+    def __init__(self, learn_rate, beta1=0.7, beta2=0.999, lambd=1 - 1e-8,
                  eps=1e-8):
         self.learn_rate = learn_rate
         self.beta1 = beta1

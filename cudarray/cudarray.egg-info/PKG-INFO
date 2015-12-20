@@ -1,6 +1,6 @@
 Metadata-Version: 1.1
 Name: cudarray
-Version: 0.1.dev
+Version: 0.1.dev0
 Summary: CUDA-based Numpy array and operations
 Home-page: http://compute.dtu.dk/~abll
 Author: Anders Boesen Lindbo Larsen

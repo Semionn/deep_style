@@ -104,6 +104,8 @@ def _Net_forward(self, blobs=None, start=None, end=None, **kwargs):
 
     self._forward(start_ind, end_ind)
 
+    if "relu" in end:
+        return {end: self.blobs['conv'+end[-3:]].data}
     # Unpack blobs to extract
     return {out: self.blobs[out].data for out in outputs}
 
@@ -152,8 +154,16 @@ def _Net_backward(self, diffs=None, start=None, end=None, **kwargs):
 
     self._backward(start_ind, end_ind)
 
+    if not end:
+        prev = self.blobs.keys()[0]
+    else:
+        prev = self._layer_names[max(list(self._layer_names).index(end) - 1, 0)]
+    if "relu" in prev:
+        blob_name = 'conv'+prev[-3:]
+        return {blob_name: self.blobs[blob_name].diff}
+    return {prev: self.blobs[prev].diff}
     # Unpack diffs to extract
-    return {out: self.blobs[out].diff for out in outputs}
+    # return {out: self.blobs[out].diff for out in outputs}
 
 
 def _Net_forward_all(self, blobs=None, **kwargs):

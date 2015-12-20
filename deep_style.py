@@ -1,10 +1,11 @@
-#!/usr/bin/env python
+#!/home/semionn/anaconda2/bin/python
 
 # todo: replace /caffe to /distibute
 # todo: script to make distibute
 import numpy as np
 import os
 import sys
+
 script_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(1, os.path.join(script_path, 'caffe'))
 sys.path.insert(1, os.path.join(script_path, 'deeppy'))
@@ -20,6 +21,7 @@ from matconvnet import vgg19_net
 import caffe_style.style_net as style_net
 from style_network import StyleNetwork
 from caffe_style.style_adam_solver import StyleAdamSolver
+
 
 def weight_tuple(s):
     try:
@@ -63,7 +65,7 @@ def to_rgb(img):
     return np.transpose(img[0], (1, 2, 0))
 
 
-def save_img(a, file_name='out.jpeg'):
+def save_img(a, file_name):
     a = np.uint8(np.clip(a, 0, 255))
     PIL.Image.fromarray(a).save(file_name)
 
@@ -84,22 +86,22 @@ def run():
     )
     parser.add_argument('--subject', type=str, default="images/tuebingen2.jpg",
                         help='Subject image.')
-    parser.add_argument('--style', type=str, default="images/groening2.jpg",
+    parser.add_argument('--style', type=str, default="images/starry_night2.jpg",
                         help='Style image.')
-    parser.add_argument('--output', default='out.png', type=str,
+    parser.add_argument('--output', default='out.jpeg', type=str,
                         help='Output image.')
     parser.add_argument('--init', default=None, type=str,
                         help='Initial image. Subject is chosen as default.')
-    parser.add_argument('--init-noise', default=0.0, type=float_range,
+    parser.add_argument('--init-noise', default=0.1, type=float_range,
                         help='Weight between [0, 1] to adjust the noise level '
                              'in the initial image.')
     parser.add_argument('--random-seed', default=None, type=int,
                         help='Random state.')
     parser.add_argument('--animation', default='animation', type=str,
                         help='Output animation directory.')
-    parser.add_argument('--iterations', default=200, type=int,
+    parser.add_argument('--iterations', default=150, type=int,
                         help='Number of iterations to run.')
-    parser.add_argument('--learn-rate', default=2.0, type=float,
+    parser.add_argument('--learn-rate', default=3.0, type=float,
                         help='Learning rate.')
     parser.add_argument('--smoothness', type=float, default=5e-8,
                         help='Weight of smoothing scheme.')
@@ -128,88 +130,57 @@ def run():
     main_run(args)
 
 
-def main_run(args):
-    load_deeppy = False
-    load_dream = True
+def resize_big_image(image_path):
+    maxwidth = 300
+    img = PIL.Image.open(image_path)
+    if img.size[0] > maxwidth:
+        wpercent = (maxwidth/float(img.size[0]))
+        hsize = int((float(img.size[1])*float(wpercent)))
+        img = img.resize((maxwidth,hsize), PIL.Image.ANTIALIAS)
+        img.save(image_path)
+    elif img.size[1] > maxwidth:
+        hpercent = (maxwidth/float(img.size[1]))
+        wsize = int((float(img.size[0])*float(hpercent)))
+        img = img.resize((wsize, maxwidth), PIL.Image.ANTIALIAS)
+        img.save(image_path)
 
+
+def main_run(args):
     if args.random_seed is not None:
         np.random.seed(args.random_seed)
 
     prototxt = args.prototxt
     params_file = args.caffemodel
 
+    resize_big_image(args.subject)
+    resize_big_image(args.style)
+
     pixel_mean = [103.939, 116.779, 123.68]
-    if load_dream:
-        if args.gpu == "on":
-            caffe.set_mode_gpu()
-            caffe.set_device(0)
-        style_img = caffe.io.load_image(args.style)
-        subject_img = caffe.io.load_image(args.subject)
-        net_caffe = style_net.StyleNet(prototxt, params_file, subject_img, style_img,
-                                       args.subject_weights, args.style_weights, args.subject_ratio,
-                                       mean=np.float32(pixel_mean))
+    if args.gpu == "on":
+        caffe.set_mode_gpu()
+        caffe.set_device(0)
+    style_img = caffe.io.load_image(args.style)
+    subject_img = caffe.io.load_image(args.subject)
+    net_caffe = style_net.StyleNet(prototxt, params_file, subject_img, style_img,
+                                   args.subject_weights, args.style_weights, args.subject_ratio,
+                                   mean=np.float32(pixel_mean))
+    net = net_caffe
+    src = net.blobs['data']
 
-    if load_deeppy:
-        style_img = imread(args.style) - pixel_mean
-        subject_img = imread(args.subject) - pixel_mean
-        if args.init is None:
-            init_img = subject_img
-        else:
-            init_img = imread(args.init) - pixel_mean
-        noise = np.random.normal(
-            size=init_img.shape, scale=np.std(init_img) * 1e-1)
-        init_img = init_img * (1 - args.init_noise) + noise * args.init_noise
+    h, w = subject_img.shape[:2]
+    src.reshape(src.num, src.channels, h, w)
+    src.data[...] = net.transformer.preprocess('data', subject_img)
 
-        subject_weights = weight_array(
-            args.subject_weights) * args.subject_ratio
-        style_weights = weight_array(args.style_weights)
-        layers, img_mean = vgg19_net(args.vgg19, pool_method=args.pool_method)
-        net = StyleNetwork(layers, to_bc01(init_img), to_bc01(subject_img),
-                           to_bc01(style_img), subject_weights, style_weights,
-                           args.smoothness)
-
-        next_x = net.x.array
-        for i in range(0):
-            next_x = net.layers[i].fprop(next_x)
-
-        # Repaint image
-
-        def net_img():
-            return to_rgb(net.image) + pixel_mean
-
-        if not os.path.exists(args.animation):
-            os.mkdir(args.animation)
-
-        params = net._params
-        learn_rule = dp.Adam(learn_rate=args.learn_rate)
-        learn_rule_states = [learn_rule.init_state(p) for p in params]
-        for i in range(args.iterations):
-            imsave(os.path.join(args.animation, '%.4d.png' % i), net_img())
-            cost = np.mean(net._update())
-            for param, state in zip(params, learn_rule_states):
-                learn_rule.step(param, state)
-            print('Iteration: %i, cost: %.4f' % (i, cost))
-        imsave(args.output, net_img())
-
-    if load_dream:
-        net = net_caffe
-        src = net.blobs['data']
-        src.data[...] = net.transformer.preprocess('data', subject_img)
-
+    params = net._params
+    style_adam = StyleAdamSolver(learn_rate=args.learn_rate)
+    optimization_states = [style_adam.init_state(p) for p in params]
+    for i in range(args.iterations):
+        cost = np.mean(net.update())
         vis = deprocess(net, src.data[0])
-        save_img(vis)
-        params = net._params
-        style_adam = StyleAdamSolver(learn_rate=args.learn_rate)
-        optimization_states = [style_adam.init_state(p) for p in params]
-        for i in range(args.iterations):
-            cost = np.mean(net._update())
-            vis = deprocess(net, src.data[0])
-            save_img(vis)
-            for param, state in zip(params, optimization_states):
-                style_adam.step(param, state)
-            print('Iteration: %i, cost: %.4f' % (i, cost))
-            if cost < 10:
-                break
+        save_img(vis, args.output)
+        for param, state in zip(params, optimization_states):
+            style_adam.step(param, state)
+        print('Iteration: %i, cost: %.4f' % (i, cost))
 
 
 if __name__ == "__main__":

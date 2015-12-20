@@ -1,9 +1,10 @@
 name: "VGG_ILSVRC_19_layers"
 input: "data"
-input_dim: 10
+input_dim: 1
 input_dim: 3
 input_dim: 224
 input_dim: 224
+force_backward: true
 layers {
   bottom: "data"
   top: "conv1_1"
@@ -44,7 +45,7 @@ layers {
   name: "pool1"
   type: POOLING
   pooling_param {
-    pool: MAX
+    pool: AVE
     kernel_size: 2
     stride: 2
   }
@@ -89,7 +90,7 @@ layers {
   name: "pool2"
   type: POOLING
   pooling_param {
-    pool: MAX
+    pool: AVE
     kernel_size: 2
     stride: 2
   }
@@ -168,7 +169,7 @@ layers {
   name: "pool3"
   type: POOLING
   pooling_param {
-    pool: MAX
+    pool: AVE
     kernel_size: 2
     stride: 2
   }
@@ -247,7 +248,7 @@ layers {
   name: "pool4"
   type: POOLING
   pooling_param {
-    pool: MAX
+    pool: AVE
     kernel_size: 2
     stride: 2
   }
@@ -326,7 +327,7 @@ layers {
   name: "pool5"
   type: POOLING
   pooling_param {
-    pool: MAX
+    pool: AVE
     kernel_size: 2
     stride: 2
   }
